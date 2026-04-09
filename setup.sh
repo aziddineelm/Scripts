@@ -10,14 +10,11 @@ BOLD='\033[1m'
 NC='\033[0m' # No Color (Reset)
 
 # --- Spinner / Animated Dots ---
-# Usage: start_spinner "message"  →  stop_spinner [0=ok|1=fail]
 _SPINNER_PID=""
 
 start_spinner() {
     local msg="$1"
-    # Run the dots animation in a background subshell
     (
-        local dots=""
         while true; do
             for d in "." ".." "..."; do
                 printf "\r  ${CYAN}${msg}${d}   ${NC}"
@@ -26,26 +23,32 @@ start_spinner() {
         done
     ) &
     _SPINNER_PID=$!
-    # Suppress "Killed" job-control message
     disown "$_SPINNER_PID" 2>/dev/null
 }
 
 stop_spinner() {
-    local status="${1:-0}"   # 0 = success/skip, 1 = error
+    local status="${1:-0}"
     if [[ -n "$_SPINNER_PID" ]]; then
         kill "$_SPINNER_PID" 2>/dev/null
         wait "$_SPINNER_PID" 2>/dev/null
         _SPINNER_PID=""
     fi
-    # Clear the spinner line
     printf "\r\033[2K"
     if [[ "$status" -eq 1 ]]; then
         echo -e "  [${RED}FAIL${NC}] Something went wrong."
     fi
 }
 
-# --- Helper: run a command silently while spinner runs ---
-# run_with_spinner "Message" command [args…]
+# --- Helper: ask a yes/no question ---
+ask_yn() {
+    local prompt="$1"
+    local answer
+    echo -en "  ${CYAN}?${NC} ${prompt} (y/N): "
+    read -r answer
+    [[ "$answer" =~ ^[Yy]$ ]]
+}
+
+# --- Helper: run a command silently with spinner ---
 run_with_spinner() {
     local msg="$1"; shift
     start_spinner "$msg"
@@ -61,101 +64,161 @@ is_installed() {
 }
 
 # ─────────────────────────────────────────────
+# Pre-flight: Get sudo password upfront
+if ! sudo -n true 2>/dev/null; then
+    echo -e "${CYAN}Please enter your password to grant sudo access:${NC}"
+    sudo -v
+fi
+# Keep sudo alive in the background
+while true; do sudo -n true; sleep 60; kill -0 "$$" || exit; done 2>/dev/null &
+SUDO_KEEPALIVE_PID=$!
+
+# ─────────────────────────────────────────────
 echo -e "\n${BOLD}${BLUE}╔══════════════════════════════╗${NC}"
 echo -e "${BOLD}${BLUE}║     System Setup Starting    ║${NC}"
 echo -e "${BOLD}${BLUE}╚══════════════════════════════╝${NC}\n"
+echo -e "  You will be asked before ${BOLD}each${NC} step. Press ${YELLOW}y${NC} to accept or ${RED}Enter${NC} to skip.\n"
 
 # ── 1. Update the system ──────────────────────
-echo -e "${BOLD}${CYAN}[1/6]${NC} System Update"
-start_spinner "Updating package lists"
-sudo apt-get update > /dev/null 2>&1
-stop_spinner
-echo -e "  [${GREEN}OK${NC}]   Package lists updated."
-
-start_spinner "Upgrading packages"
-sudo apt-get upgrade -y > /dev/null 2>&1
-stop_spinner
-echo -e "  [${GREEN}OK${NC}]   Packages upgraded.\n"
+echo -e "${BOLD}${CYAN}[1/7]${NC} System Update"
+if ask_yn "Update and upgrade system packages?"; then
+    run_with_spinner "Updating package lists" sudo apt-get update
+    echo -e "  [${GREEN}OK${NC}]   Package lists updated."
+    run_with_spinner "Upgrading packages" sudo apt-get upgrade -y
+    echo -e "  [${GREEN}OK${NC}]   Packages upgraded."
+else
+    echo -e "  [${GREEN}SKIP${NC}] System update skipped."
+fi
+echo ""
 
 # ── 2. Install common tools ───────────────────
-echo -e "${BOLD}${CYAN}[2/6]${NC} Common Tools"
-PACKAGES=(curl git vim neovim zsh stow)
-for pkg in "${PACKAGES[@]}"; do
+echo -e "${BOLD}${CYAN}[2/7]${NC} Common Tools"
+echo -e "  You will be asked for each package individually.\n"
+
+ALL_PACKAGES=(curl git vim neovim zsh stow)
+
+echo -e "  ${CYAN}?${NC} Enter any extra packages to install (space-separated), or press Enter to skip:"
+read -rp "    Extra packages: " extra_input
+if [[ -n "$extra_input" ]]; then
+    read -ra EXTRA_PACKAGES <<< "$extra_input"
+    ALL_PACKAGES+=("${EXTRA_PACKAGES[@]}")
+fi
+echo ""
+
+for pkg in "${ALL_PACKAGES[@]}"; do
     if is_installed "$pkg"; then
-        echo -e "  [${GREEN}SKIP${NC}] $pkg already installed."
+        echo -e "  [${GREEN}SKIP${NC}] $pkg is already installed."
     else
-        start_spinner "Installing $pkg"
-        sudo apt-get install -y "$pkg" > /dev/null 2>&1
-        stop_spinner
-        echo -e "  [${YELLOW}DONE${NC}] $pkg installed."
+        if ask_yn "Install ${BOLD}${pkg}${NC}?"; then
+            run_with_spinner "Installing $pkg" sudo apt-get install -y "$pkg"
+            echo -e "  [${YELLOW}DONE${NC}] $pkg installed."
+        else
+            echo -e "  [${GREEN}SKIP${NC}] $pkg skipped."
+        fi
     fi
 done
 echo ""
 
 # ── 3. Install Oh-My-Zsh ─────────────────────
-echo -e "${BOLD}${CYAN}[3/6]${NC} Oh-My-Zsh"
+echo -e "${BOLD}${CYAN}[3/7]${NC} Oh-My-Zsh"
 if [ -d "$HOME/.oh-my-zsh" ]; then
-    echo -e "  [${GREEN}SKIP${NC}] Oh-My-Zsh already installed.\n"
+    echo -e "  [${GREEN}SKIP${NC}] Oh-My-Zsh already installed."
 else
-    start_spinner "Downloading & installing Oh-My-Zsh"
-    sh -c "$(curl -fsSL https://raw.githubusercontent.com/ohmyzsh/ohmyzsh/master/tools/install.sh)" "" --unattended > /dev/null 2>&1
-    stop_spinner
-    echo -e "  [${YELLOW}DONE${NC}] Oh-My-Zsh installed.\n"
+    if ask_yn "Install Oh-My-Zsh?"; then
+        run_with_spinner "Downloading & installing Oh-My-Zsh" \
+            sh -c "$(curl -fsSL https://raw.githubusercontent.com/ohmyzsh/ohmyzsh/master/tools/install.sh)" "" --unattended
+        echo -e "  [${YELLOW}DONE${NC}] Oh-My-Zsh installed."
+    else
+        echo -e "  [${GREEN}SKIP${NC}] Oh-My-Zsh skipped."
+    fi
 fi
+echo ""
 
-# ── 4. Define ZSH Custom path ─────────────────
+# ── 4. Clone Zsh Plugins ──────────────────────
 ZSH_CUSTOM=${ZSH_CUSTOM:-$HOME/.oh-my-zsh/custom}
 
-# ── 5. Clone Zsh Plugins ──────────────────────
-echo -e "${BOLD}${CYAN}[4/6]${NC} Zsh Plugins"
+echo -e "${BOLD}${CYAN}[4/7]${NC} Zsh Plugins"
 
 # Autosuggestions
 if [ -d "$ZSH_CUSTOM/plugins/zsh-autosuggestions" ]; then
     echo -e "  [${GREEN}SKIP${NC}] zsh-autosuggestions already exists."
 else
-    start_spinner "Cloning zsh-autosuggestions"
-    git clone https://github.com/zsh-users/zsh-autosuggestions \
-        "$ZSH_CUSTOM/plugins/zsh-autosuggestions" > /dev/null 2>&1
-    stop_spinner
-    echo -e "  [${YELLOW}DONE${NC}] zsh-autosuggestions cloned."
+    if ask_yn "Clone ${BOLD}zsh-autosuggestions${NC}?"; then
+        run_with_spinner "Cloning zsh-autosuggestions" \
+            git clone https://github.com/zsh-users/zsh-autosuggestions \
+            "$ZSH_CUSTOM/plugins/zsh-autosuggestions"
+        echo -e "  [${YELLOW}DONE${NC}] zsh-autosuggestions cloned."
+    else
+        echo -e "  [${GREEN}SKIP${NC}] zsh-autosuggestions skipped."
+    fi
 fi
 
 # Syntax Highlighting
 if [ -d "$ZSH_CUSTOM/plugins/zsh-syntax-highlighting" ]; then
     echo -e "  [${GREEN}SKIP${NC}] zsh-syntax-highlighting already exists."
 else
-    start_spinner "Cloning zsh-syntax-highlighting"
-    git clone https://github.com/zsh-users/zsh-syntax-highlighting.git \
-        "$ZSH_CUSTOM/plugins/zsh-syntax-highlighting" > /dev/null 2>&1
-    stop_spinner
-    echo -e "  [${YELLOW}DONE${NC}] zsh-syntax-highlighting cloned."
+    if ask_yn "Clone ${BOLD}zsh-syntax-highlighting${NC}?"; then
+        run_with_spinner "Cloning zsh-syntax-highlighting" \
+            git clone https://github.com/zsh-users/zsh-syntax-highlighting.git \
+            "$ZSH_CUSTOM/plugins/zsh-syntax-highlighting"
+        echo -e "  [${YELLOW}DONE${NC}] zsh-syntax-highlighting cloned."
+    else
+        echo -e "  [${GREEN}SKIP${NC}] zsh-syntax-highlighting skipped."
+    fi
 fi
 echo ""
 
-# ── 6. Configure .zshrc ───────────────────────
-echo -e "${BOLD}${CYAN}[5/6]${NC} Zsh Configuration"
+# ── 5. Configure .zshrc ───────────────────────
+echo -e "${BOLD}${CYAN}[5/7]${NC} Zsh Configuration"
 if grep -q "zsh-autosuggestions" "$HOME/.zshrc" 2>/dev/null; then
-    echo -e "  [${GREEN}SKIP${NC}] Plugins already configured in .zshrc.\n"
+    echo -e "  [${GREEN}SKIP${NC}] Plugins already configured in .zshrc."
 else
-    start_spinner "Updating .zshrc plugins"
-    sed -i 's/plugins=(git)/plugins=(git zsh-autosuggestions zsh-syntax-highlighting)/' "$HOME/.zshrc"
-    stop_spinner
-    echo -e "  [${YELLOW}DONE${NC}] .zshrc updated.\n"
+    if ask_yn "Update .zshrc to enable the cloned plugins?"; then
+        sed -i 's/plugins=(git)/plugins=(git zsh-autosuggestions zsh-syntax-highlighting)/' "$HOME/.zshrc"
+        echo -e "  [${YELLOW}DONE${NC}] .zshrc updated."
+    else
+        echo -e "  [${GREEN}SKIP${NC}] .zshrc update skipped."
+    fi
 fi
+echo ""
 
-# ── 7. Change default shell ───────────────────
-echo -e "${BOLD}${CYAN}[6/6]${NC} Default Shell"
+# ── 6. Change default shell ───────────────────
+echo -e "${BOLD}${CYAN}[6/7]${NC} Default Shell"
 if [[ "$SHELL" == *"zsh"* ]]; then
-    echo -e "  [${GREEN}SKIP${NC}] Default shell is already zsh.\n"
+    echo -e "  [${GREEN}SKIP${NC}] Default shell is already zsh."
 else
-    start_spinner "Changing default shell to zsh"
-    sudo chsh -s "$(which zsh)" "$USER" > /dev/null 2>&1
-    stop_spinner
-    echo -e "  [${YELLOW}DONE${NC}] Default shell changed to zsh.\n"
+    if ask_yn "Change your default shell to ${BOLD}zsh${NC}?"; then
+        run_with_spinner "Changing default shell to zsh" \
+            sudo chsh -s "$(which zsh)" "$USER"
+        echo -e "  [${YELLOW}DONE${NC}] Default shell changed to zsh."
+    else
+        echo -e "  [${GREEN}SKIP${NC}] Default shell unchanged."
+    fi
 fi
+echo ""
+
+# ── 7. Install Nerd Font ──────────────────────
+echo -e "${BOLD}${CYAN}[7/7]${NC} JetBrainsMono Nerd Font"
+if fc-list | grep -qi "JetBrainsMono Nerd Font"; then
+    echo -e "  [${GREEN}SKIP${NC}] JetBrainsMono Nerd Font is already installed."
+else
+    if ask_yn "Download and install JetBrainsMono Nerd Font?"; then
+        start_spinner "Downloading JetBrainsMono font"
+        mkdir -p "$HOME/.local/share/fonts"
+        curl -fLo "$HOME/.local/share/fonts/JetBrainsMonoNerdFont-Regular.ttf" \
+            https://github.com/ryanoasis/nerd-fonts/raw/master/patched-fonts/JetBrainsMono/Ligatures/Regular/JetBrainsMonoNerdFont-Regular.ttf > /dev/null 2>&1
+        fc-cache -fv > /dev/null 2>&1
+        stop_spinner
+        echo -e "  [${YELLOW}DONE${NC}] JetBrainsMono Nerd Font installed."
+        echo -e "         ${CYAN}Note: Select it manually in your terminal emulator preferences.${NC}"
+    else
+        echo -e "  [${GREEN}SKIP${NC}] Font installation skipped."
+    fi
+fi
+echo ""
 
 # ── Done ──────────────────────────────────────
 echo -e "${BOLD}${BLUE}╔══════════════════════════════╗${NC}"
 echo -e "${BOLD}${BLUE}║${NC}${BOLD}${GREEN}   ✓  Setup Complete!         ${NC}${BOLD}${BLUE}║${NC}"
 echo -e "${BOLD}${BLUE}╚══════════════════════════════╝${NC}"
-echo -e "  Restart your terminal to apply all changes.\n"
+echo -e "  Restart your terminal (or run ${CYAN}source ~/.zshrc${NC}) to apply all changes.\n"
