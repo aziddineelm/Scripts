@@ -80,7 +80,7 @@ echo -e "${BOLD}${BLUE}╚══════════════════
 echo -e "  You will be asked before ${BOLD}each${NC} step. Press ${YELLOW}y${NC} to accept or ${RED}Enter${NC} to skip.\n"
 
 # ── 1. Update the system ──────────────────────
-echo -e "${BOLD}${CYAN}[1/7]${NC} System Update"
+echo -e "${BOLD}${CYAN}[1/8]${NC} System Update"
 if ask_yn "Update and upgrade system packages?"; then
     run_with_spinner "Updating package lists" sudo apt-get update
     echo -e "  [${GREEN}OK${NC}]   Package lists updated."
@@ -92,10 +92,10 @@ fi
 echo ""
 
 # ── 2. Install common tools ───────────────────
-echo -e "${BOLD}${CYAN}[2/7]${NC} Common Tools"
+echo -e "${BOLD}${CYAN}[2/8]${NC} Common Tools"
 echo -e "  You will be asked for each package individually.\n"
 
-ALL_PACKAGES=(curl git vim neovim zsh stow)
+ALL_PACKAGES=(curl git vim neovim zsh stow wezterm tmux)
 
 echo -e "  ${CYAN}?${NC} Enter any extra packages to install (space-separated), or press Enter to skip:"
 read -rp "    Extra packages: " extra_input
@@ -120,7 +120,7 @@ done
 echo ""
 
 # ── 3. Install Oh-My-Zsh ─────────────────────
-echo -e "${BOLD}${CYAN}[3/7]${NC} Oh-My-Zsh"
+echo -e "${BOLD}${CYAN}[3/8]${NC} Oh-My-Zsh"
 if [ -d "$HOME/.oh-my-zsh" ]; then
     echo -e "  [${GREEN}SKIP${NC}] Oh-My-Zsh already installed."
 else
@@ -137,7 +137,7 @@ echo ""
 # ── 4. Clone Zsh Plugins ──────────────────────
 ZSH_CUSTOM=${ZSH_CUSTOM:-$HOME/.oh-my-zsh/custom}
 
-echo -e "${BOLD}${CYAN}[4/7]${NC} Zsh Plugins"
+echo -e "${BOLD}${CYAN}[4/8]${NC} Zsh Plugins"
 
 # Autosuggestions
 if [ -d "$ZSH_CUSTOM/plugins/zsh-autosuggestions" ]; then
@@ -169,7 +169,7 @@ fi
 echo ""
 
 # ── 5. Configure .zshrc ───────────────────────
-echo -e "${BOLD}${CYAN}[5/7]${NC} Zsh Configuration"
+echo -e "${BOLD}${CYAN}[5/8]${NC} Zsh Configuration"
 if grep -q "zsh-autosuggestions" "$HOME/.zshrc" 2>/dev/null; then
     echo -e "  [${GREEN}SKIP${NC}] Plugins already configured in .zshrc."
 else
@@ -183,7 +183,7 @@ fi
 echo ""
 
 # ── 6. Change default shell ───────────────────
-echo -e "${BOLD}${CYAN}[6/7]${NC} Default Shell"
+echo -e "${BOLD}${CYAN}[6/8]${NC} Default Shell"
 if [[ "$SHELL" == *"zsh"* ]]; then
     echo -e "  [${GREEN}SKIP${NC}] Default shell is already zsh."
 else
@@ -198,7 +198,7 @@ fi
 echo ""
 
 # ── 7. Install Nerd Font ──────────────────────
-echo -e "${BOLD}${CYAN}[7/7]${NC} JetBrainsMono Nerd Font"
+echo -e "${BOLD}${CYAN}[7/8]${NC} JetBrainsMono Nerd Font"
 if fc-list | grep -qi "JetBrainsMono Nerd Font"; then
     echo -e "  [${GREEN}SKIP${NC}] JetBrainsMono Nerd Font is already installed."
 else
@@ -213,6 +213,29 @@ else
         echo -e "         ${CYAN}Note: Select it manually in your terminal emulator preferences.${NC}"
     else
         echo -e "  [${GREEN}SKIP${NC}] Font installation skipped."
+    fi
+fi
+echo ""
+
+# ── 8. Clone Dotfiles & Stow ──────────────────
+DOTFILES_REPO="https://github.com/aziddineelm/dotfiles.git"
+DOTFILES_DIR="$HOME/dotfiles"
+
+echo -e "${BOLD}${CYAN}[8/8]${NC} Dotfiles"
+if [ -d "$DOTFILES_DIR" ]; then
+    echo -e "  [${GREEN}SKIP${NC}] Dotfiles directory already exists at $DOTFILES_DIR."
+    if ask_yn "Re-run ${BOLD}stow .${NC} to relink configs?"; then
+        run_with_spinner "Stowing dotfiles" stow -d "$DOTFILES_DIR" -t "$HOME" .
+        echo -e "  [${YELLOW}DONE${NC}] Dotfiles re-stowed."
+    fi
+else
+    if ask_yn "Clone dotfiles and link configs with stow?"; then
+        run_with_spinner "Cloning dotfiles" git clone "$DOTFILES_REPO" "$DOTFILES_DIR"
+        echo -e "  [${YELLOW}DONE${NC}] Dotfiles cloned to $DOTFILES_DIR."
+        run_with_spinner "Stowing dotfiles" stow -d "$DOTFILES_DIR" -t "$HOME" .
+        echo -e "  [${YELLOW}DONE${NC}] Dotfiles stowed (config symlinks created)."
+    else
+        echo -e "  [${GREEN}SKIP${NC}] Dotfiles skipped."
     fi
 fi
 echo ""
