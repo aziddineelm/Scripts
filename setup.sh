@@ -95,7 +95,7 @@ echo ""
 echo -e "${BOLD}${CYAN}[2/8]${NC} Common Tools"
 echo -e "  You will be asked for each package individually.\n"
 
-ALL_PACKAGES=(curl git vim neovim zsh stow wezterm tmux)
+ALL_PACKAGES=(curl git vim neovim zsh stow wezterm tmux eza)
 
 echo -e "  ${CYAN}?${NC} Enter any extra packages to install (space-separated), or press Enter to skip:"
 read -rp "    Extra packages: " extra_input
