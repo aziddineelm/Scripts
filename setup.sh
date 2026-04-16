@@ -80,7 +80,7 @@ echo -e "${BOLD}${BLUE}╚══════════════════
 echo -e "  You will be asked before ${BOLD}each${NC} step. Press ${YELLOW}y${NC} to accept or ${RED}Enter${NC} to skip.\n"
 
 # ── 1. Update the system ──────────────────────
-echo -e "${BOLD}${CYAN}[1/8]${NC} System Update"
+echo -e "${BOLD}${CYAN}[1/9]${NC} System Update"
 if ask_yn "Update and upgrade system packages?"; then
     run_with_spinner "Updating package lists" sudo apt-get update
     echo -e "  [${GREEN}OK${NC}]   Package lists updated."
@@ -92,10 +92,10 @@ fi
 echo ""
 
 # ── 2. Install common tools ───────────────────
-echo -e "${BOLD}${CYAN}[2/8]${NC} Common Tools"
+echo -e "${BOLD}${CYAN}[2/9]${NC} Common Tools"
 echo -e "  You will be asked for each package individually.\n"
 
-ALL_PACKAGES=(curl git vim neovim zsh stow wezterm tmux eza)
+ALL_PACKAGES=(curl git vim neovim zsh stow tmux eza flatpak)
 
 echo -e "  ${CYAN}?${NC} Enter any extra packages to install (space-separated), or press Enter to skip:"
 read -rp "    Extra packages: " extra_input
@@ -120,7 +120,7 @@ done
 echo ""
 
 # ── 3. Install Oh-My-Zsh ─────────────────────
-echo -e "${BOLD}${CYAN}[3/8]${NC} Oh-My-Zsh"
+echo -e "${BOLD}${CYAN}[3/9]${NC} Oh-My-Zsh"
 if [ -d "$HOME/.oh-my-zsh" ]; then
     echo -e "  [${GREEN}SKIP${NC}] Oh-My-Zsh already installed."
 else
@@ -134,10 +134,27 @@ else
 fi
 echo ""
 
-# ── 4. Clone Zsh Plugins ──────────────────────
+# ── 4. Install Wezterm ────────────────────────
+echo -e "${BOLD}${CYAN}[4/9]${NC} Wezterm"
+if command -v flatpak >/dev/null 2>&1 && flatpak list | grep -q 'org.wezfurlong.wezterm'; then
+    echo -e "  [${GREEN}SKIP${NC}] Wezterm is already installed."
+else
+    if ask_yn "Install ${BOLD}Wezterm${NC}?"; then
+        run_with_spinner "Adding Flathub remote" \
+            flatpak remote-add --user --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo
+        run_with_spinner "Installing Wezterm" \
+            flatpak install --user -y flathub org.wezfurlong.wezterm
+        echo -e "  [${YELLOW}DONE${NC}] Wezterm installed."
+    else
+        echo -e "  [${GREEN}SKIP${NC}] Wezterm skipped."
+    fi
+fi
+echo ""
+
+# ── 5. Clone Zsh Plugins ──────────────────────
 ZSH_CUSTOM=${ZSH_CUSTOM:-$HOME/.oh-my-zsh/custom}
 
-echo -e "${BOLD}${CYAN}[4/8]${NC} Zsh Plugins"
+echo -e "${BOLD}${CYAN}[5/9]${NC} Zsh Plugins"
 
 # Autosuggestions
 if [ -d "$ZSH_CUSTOM/plugins/zsh-autosuggestions" ]; then
@@ -168,8 +185,8 @@ else
 fi
 echo ""
 
-# ── 5. Configure .zshrc ───────────────────────
-echo -e "${BOLD}${CYAN}[5/8]${NC} Zsh Configuration"
+# ── 6. Configure .zshrc ───────────────────────
+echo -e "${BOLD}${CYAN}[6/9]${NC} Zsh Configuration"
 if grep -q "zsh-autosuggestions" "$HOME/.zshrc" 2>/dev/null; then
     echo -e "  [${GREEN}SKIP${NC}] Plugins already configured in .zshrc."
 else
@@ -180,10 +197,21 @@ else
         echo -e "  [${GREEN}SKIP${NC}] .zshrc update skipped."
     fi
 fi
+
+if ! grep -q "alias wezterm=" "$HOME/.zshrc" 2>/dev/null; then
+    if ask_yn "Add Wezterm alias to .zshrc?"; then
+        echo -e "\n# Wezterm Flatpak Alias\nalias wezterm='flatpak run org.wezfurlong.wezterm'" >> "$HOME/.zshrc"
+        echo -e "  [${YELLOW}DONE${NC}] Wezterm alias added to .zshrc."
+    else
+        echo -e "  [${GREEN}SKIP${NC}] Wezterm alias skipped."
+    fi
+else
+    echo -e "  [${GREEN}SKIP${NC}] Wezterm alias already exists in .zshrc."
+fi
 echo ""
 
-# ── 6. Change default shell ───────────────────
-echo -e "${BOLD}${CYAN}[6/8]${NC} Default Shell"
+# ── 7. Change default shell ───────────────────
+echo -e "${BOLD}${CYAN}[7/9]${NC} Default Shell"
 if [[ "$SHELL" == *"zsh"* ]]; then
     echo -e "  [${GREEN}SKIP${NC}] Default shell is already zsh."
 else
@@ -197,8 +225,8 @@ else
 fi
 echo ""
 
-# ── 7. Install Nerd Font ──────────────────────
-echo -e "${BOLD}${CYAN}[7/8]${NC} JetBrainsMono Nerd Font"
+# ── 8. Install Nerd Font ──────────────────────
+echo -e "${BOLD}${CYAN}[8/9]${NC} JetBrainsMono Nerd Font"
 if fc-list | grep -qi "JetBrainsMono Nerd Font"; then
     echo -e "  [${GREEN}SKIP${NC}] JetBrainsMono Nerd Font is already installed."
 else
@@ -217,11 +245,11 @@ else
 fi
 echo ""
 
-# ── 8. Clone Dotfiles & Stow ──────────────────
+# ── 9. Clone Dotfiles & Stow ──────────────────
 DOTFILES_REPO="https://github.com/aziddineelm/dotfiles.git"
 DOTFILES_DIR="$HOME/dotfiles"
 
-echo -e "${BOLD}${CYAN}[8/8]${NC} Dotfiles"
+echo -e "${BOLD}${CYAN}[9/9]${NC} Dotfiles"
 if [ -d "$DOTFILES_DIR" ]; then
     echo -e "  [${GREEN}SKIP${NC}] Dotfiles directory already exists at $DOTFILES_DIR."
     if ask_yn "Re-run ${BOLD}stow .${NC} to relink configs?"; then
